@@ -8,7 +8,7 @@
 # License   : Revised BSD License
 # -----------------------------------------------------------------------------
 # Creation  : 26-Apr-2010
-# Last mod  : 06-Feb-2012
+# Last mod  : 08-Feb-2012
 # -----------------------------------------------------------------------------
 
 """
@@ -65,7 +65,7 @@ DEFAULT_OPTIONS = dict(
 def mode_local():
 	"""Sets Cuisine into local mode, where run/sudo won't go through
 	Fabric's API, but directly through a popen. This allows you to
-	easily test your Cuisine scripts without using Fabric"""
+	easily test your Cuisine scripts without using Fabric."""
 	global MODE_LOCAL
 	if MODE_LOCAL is False:
 		def custom_run( cmd ):
@@ -159,11 +159,11 @@ def run(*args, **kwargs):
 		return fabric.api.run(*args, **kwargs)
 
 def run_local(command):
-	"""A wrapper around subprocess"""
+	"""A wrapper around subprocess."""
 	pipe = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE).stdout
 	res = pipe.read()
 	# FIXME: Should stream the pipe, and only print it if fabric's properties allow it
-	print res
+	# print res
 	return pipe
 
 def sudo(*args, **kwargs):
@@ -253,6 +253,8 @@ def text_ensure_line(text, *lines):
 	the end of it."""
 	eol = text_detect_eol(text)
 	res = list(text.split(eol))
+	if res[0] is '' and len(res) is 1:
+		res = list()
 	for line in lines:
 		assert line.find(eol) == -1, "No EOL allowed in lines parameter: " + repr(line)
 		found = False
@@ -346,6 +348,7 @@ def file_write(location, content, mode=None, owner=None, group=None):
 	os.write(fd, content)
 	# Upload the content if necessary
 	if not file_exists(location) or sig != file_sha256(location):
+		if MODE == MODE_SUDO: mode = MODE_SUDO
 		fabric.operations.put(local_path, location, use_sudo=(mode == MODE_SUDO))
 	# Remove the local temp file
 	os.close(fd)
@@ -413,7 +416,7 @@ def file_link(source, destination, symbolic=True, mode=None, owner=None, group=N
 	file_attribs(destination, mode, owner, group)
 
 def file_sha256(location):
-	"""Returns the SHA-256 sum (as a hex string) for the remote file at the given location"""
+	"""Returns the SHA-256 sum (as a hex string) for the remote file at the given location."""
 	return run('sha256sum "%s" | cut -d" " -f1' % (location))
 
 # TODO: From McCoy's version, consider merging
@@ -437,18 +440,13 @@ def dir_exists(location):
 
 def dir_ensure(location, recursive=False, mode=None, owner=None, group=None):
 	"""Ensures that there is a remote directory at the given location,
-	optionnaly updating its mode/owner/group.
+	optionally updating its mode/owner/group.
 
 	If we are not updating the owner/group then this can be done as a single
 	ssh call, so use that method, otherwise set owner/group after creation."""
-	if mode:
-		mode_arg = "-m %s" % (mode)
-	else:
-		mode_arg = ""
-	run('test -d "%s" || mkdir %s %s "%s" && echo OK ; true' %
-		(location, recursive and "-p" or "", mode_arg, location))
-	if owner or group:
-		dir_attribs(location, owner=owner, group=group)
+	run('test -d "%s" || mkdir %s "%s" && echo OK ; true' % (location, recursive and "-p" or "", location))
+	if owner or group or mode:
+		dir_attribs(location, owner=owner, group=group, mode=mode)
 
 # =============================================================================
 #
@@ -463,7 +461,7 @@ def package_update(package=None):
 
 @dispatch
 def package_install(package, update=False):
-	"""Installs the given package/list of package, optionnaly updating
+	"""Installs the given package/list of package, optionally updating
 	the package database."""
 
 @dispatch
@@ -475,8 +473,8 @@ def package_ensure(package):
 # APT PACKAGE (DEBIAN/UBUNTU)
 # -----------------------------------------------------------------------------
 
-def aptrepo_ensure(aptrepo):
-	sudo("add-apt-repository " + aptrepo)
+def repository_ensure_apt(repository):
+	sudo("add-apt-repository " + repository)
 
 def package_update_apt(package=None):
 	if package == None:
@@ -690,13 +688,14 @@ def ssh_authorize(user, key):
 		else:
 			return True
 	else:
-		file_write(keyf, key)
+		# Make sure that .ssh directory exists, see #42
+		dir_ensure(os.path.dirname(keyf), user=user, group=user, mode="700")
+		file_write(keyf, key,             user=user, group=user, mode="600")
 		return False
-
 
 def upstart_ensure(name):
 	"""Ensures that the given upstart service is running, restarting
-	it if necessary"""
+	it if necessary."""
 	status = sudo("service %s status" % name)
 	if status.find("is running") >= 0 or status.find("/running") >= 0:
 		sudo("service %s restart" % name)
