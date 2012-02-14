@@ -724,8 +724,7 @@ def locale_check(locale):
 def locale_ensure(locale):
 	if locale_check(locale):
 		return
-	with fabric.context_managers.settings(warn_only=True):
-		sudo("/usr/share/locales/install-language-pack %s" % (locale,))
+	sudo("locale-gen %s" % (locale,))
 	sudo("dpkg-reconfigure locales")
 
 
